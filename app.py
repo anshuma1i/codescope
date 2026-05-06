@@ -703,86 +703,86 @@ if st.session_state.get('analysis_done', False):
                 low = summary_stats.get("low_count", 0)
                 total = summary_stats.get("total_functions", 1) or 1
             
-            # Futuristic Telemetry Board (EV Dash style)
-            st.markdown(f"""
-            <div class="cs-telemetry">
-                <div class="cs-tile">
-                    <div class="cs-tile-value" style="color: #FF0000; text-shadow: 0 0 15px rgba(255,0,0,0.3);">{crit/total*100:.1f}<span>%</span></div>
-                    <div class="cs-tile-label">Critical Load</div>
-                    <div class="cs-tile-count">{crit} funcs</div>
+                # Futuristic Telemetry Board (EV Dash style)
+                st.markdown(f"""
+                <div class="cs-telemetry">
+                    <div class="cs-tile">
+                        <div class="cs-tile-value" style="color: #FF0000; text-shadow: 0 0 15px rgba(255,0,0,0.3);">{crit/total*100:.1f}<span>%</span></div>
+                        <div class="cs-tile-label">Critical Load</div>
+                        <div class="cs-tile-count">{crit} funcs</div>
+                    </div>
+                    <div class="cs-tile">
+                        <div class="cs-tile-value" style="color: #FF8C00; text-shadow: 0 0 15px rgba(255,140,0,0.3);">{high/total*100:.1f}<span>%</span></div>
+                        <div class="cs-tile-label">High Warning</div>
+                        <div class="cs-tile-count">{high} funcs</div>
+                    </div>
+                    <div class="cs-tile">
+                        <div class="cs-tile-value" style="color: #FFFF00; text-shadow: 0 0 15px rgba(255,255,0,0.3);">{mod/total*100:.1f}<span>%</span></div>
+                        <div class="cs-tile-label">Mod Activity</div>
+                        <div class="cs-tile-count">{mod} funcs</div>
+                    </div>
+                    <div class="cs-tile">
+                        <div class="cs-tile-value" style="color: #008000; text-shadow: 0 0 15px rgba(0,128,0,0.3);">{low/total*100:.1f}<span>%</span></div>
+                        <div class="cs-tile-label">Optimal State</div>
+                        <div class="cs-tile-count">{low} funcs</div>
+                    </div>
                 </div>
-                <div class="cs-tile">
-                    <div class="cs-tile-value" style="color: #FF8C00; text-shadow: 0 0 15px rgba(255,140,0,0.3);">{high/total*100:.1f}<span>%</span></div>
-                    <div class="cs-tile-label">High Warning</div>
-                    <div class="cs-tile-count">{high} funcs</div>
-                </div>
-                <div class="cs-tile">
-                    <div class="cs-tile-value" style="color: #FFFF00; text-shadow: 0 0 15px rgba(255,255,0,0.3);">{mod/total*100:.1f}<span>%</span></div>
-                    <div class="cs-tile-label">Mod Activity</div>
-                    <div class="cs-tile-count">{mod} funcs</div>
-                </div>
-                <div class="cs-tile">
-                    <div class="cs-tile-value" style="color: #008000; text-shadow: 0 0 15px rgba(0,128,0,0.3);">{low/total*100:.1f}<span>%</span></div>
-                    <div class="cs-tile-label">Optimal State</div>
-                    <div class="cs-tile-count">{low} funcs</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            # Monotone Bar Chart
-            risk_counts = {
-                "Risk Level": ["Critical", "High", "Moderate", "Low"],
-                "Count": [crit, high, mod, low]
-            }
-            df_dist = pd.DataFrame(risk_counts)
-            
-            chart = alt.Chart(df_dist).mark_bar(
-                color='#334155',
-                cornerRadiusTopLeft=4,
-                cornerRadiusTopRight=4,
-                size=50
-            ).encode(
-                x=alt.X('Risk Level', sort=None, axis=alt.Axis(labelAngle=0, title='', labelColor='#94A3B8', labelFontSize=13, grid=False)),
-                y=alt.Y('Count', axis=alt.Axis(labelAngle=0, title='COUNT', titleAngle=0, titleAlign='left', titleY=-20, titleX=-10, labelColor='#94A3B8', titleColor='#64748B', tickCount=4, grid=False))
-            ).properties(height=250, background='transparent')
-            
-            # EV Dash Chart Styling
-            chart = chart.configure_view(
-                strokeWidth=0
-            ).configure_axis(
-                grid=False,
-                domainColor='#1E293B',
-                tickColor='#1E293B'
-            )
-            
-            st.altair_chart(chart, use_container_width=True)
-            
-            st.markdown('<div class="cs-section-title">Top Risky Functions</div>', unsafe_allow_html=True)
-            cols_to_show = ["file", "function", "complexity", "nloc", "parameters", "risk_score", "risk_level", "complexity_grade"]
-            available_cols = [c for c in cols_to_show if c in top_risks[0]] if top_risks else []
-            df_risks = pd.DataFrame(top_risks)[available_cols] if top_risks else pd.DataFrame()
-            
-            def format_risk_level(level):
-                if level == "critical": return "🔴 critical"
-                if level == "high": return "🟠 high"
-                if level == "moderate": return "🟡 moderate"
-                return "🟢 low"
-            
-            if not df_risks.empty:
-                if 'risk_score' in df_risks.columns:
-                    df_risks['risk_score'] = df_risks['risk_score'].apply(lambda x: f"{float(x):.1f}")
-                if 'risk_level' in df_risks.columns:
-                    df_risks['risk_level'] = df_risks['risk_level'].apply(format_risk_level)
+                """, unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
                 
-                st.dataframe(df_risks, use_container_width=True)
-            else:
-                st.info("No risky functions found.")
-            
-            st.markdown('<div class="cs-section-title">Riskiest File</div>', unsafe_allow_html=True)
-            riskiest_file = html.escape(str(summary_stats.get("riskiest_file", "None")))
-            st.markdown(
-                f'<div class="cs-file-pill">{riskiest_file}</div>',
+                # Monotone Bar Chart
+                risk_counts = {
+                    "Risk Level": ["Critical", "High", "Moderate", "Low"],
+                    "Count": [crit, high, mod, low]
+                }
+                df_dist = pd.DataFrame(risk_counts)
+                
+                chart = alt.Chart(df_dist).mark_bar(
+                    color='#334155',
+                    cornerRadiusTopLeft=4,
+                    cornerRadiusTopRight=4,
+                    size=50
+                ).encode(
+                    x=alt.X('Risk Level', sort=None, axis=alt.Axis(labelAngle=0, title='', labelColor='#94A3B8', labelFontSize=13, grid=False)),
+                    y=alt.Y('Count', axis=alt.Axis(labelAngle=0, title='COUNT', titleAngle=0, titleAlign='left', titleY=-20, titleX=-10, labelColor='#94A3B8', titleColor='#64748B', tickCount=4, grid=False))
+                ).properties(height=250, background='transparent')
+                
+                # EV Dash Chart Styling
+                chart = chart.configure_view(
+                    strokeWidth=0
+                ).configure_axis(
+                    grid=False,
+                    domainColor='#1E293B',
+                    tickColor='#1E293B'
+                )
+                
+                st.altair_chart(chart, use_container_width=True)
+                
+                st.markdown('<div class="cs-section-title">Top Risky Functions</div>', unsafe_allow_html=True)
+                cols_to_show = ["file", "function", "complexity", "nloc", "parameters", "risk_score", "risk_level", "complexity_grade"]
+                available_cols = [c for c in cols_to_show if c in top_risks[0]] if top_risks else []
+                df_risks = pd.DataFrame(top_risks)[available_cols] if top_risks else pd.DataFrame()
+                
+                def format_risk_level(level):
+                    if level == "critical": return "🔴 critical"
+                    if level == "high": return "🟠 high"
+                    if level == "moderate": return "🟡 moderate"
+                    return "🟢 low"
+                
+                if not df_risks.empty:
+                    if 'risk_score' in df_risks.columns:
+                        df_risks['risk_score'] = df_risks['risk_score'].apply(lambda x: f"{float(x):.1f}")
+                    if 'risk_level' in df_risks.columns:
+                        df_risks['risk_level'] = df_risks['risk_level'].apply(format_risk_level)
+                    
+                    st.dataframe(df_risks, use_container_width=True)
+                else:
+                    st.info("No risky functions found.")
+                
+                st.markdown('<div class="cs-section-title">Riskiest File</div>', unsafe_allow_html=True)
+                riskiest_file = html.escape(str(summary_stats.get("riskiest_file", "None")))
+                st.markdown(
+                    f'<div class="cs-file-pill">{riskiest_file}</div>',
                     unsafe_allow_html=True,
                 )
                 
@@ -804,11 +804,15 @@ if st.session_state.get('analysis_done', False):
                     st.json(top_risks)
             
             with tab3:
-                st.info("Click 'Run Comparison' to generate a basic (ungrounded) report and compare it side-by-side with the grounded report.")
-                if st.button("Run Comparison"):
-                    st.session_state['show_basic'] = True
-                    if 'basic_report' not in st.session_state:
-                        with st.spinner("Generating basic ungrounded report..."):
+                if not st.session_state.get('basic_report'):
+                    st.info("Click 'Run Comparison' to generate a basic (ungrounded) report and compare it side-by-side with the grounded report.")
+                    if st.button("Run Comparison", key="run_comparison_btn"):
+                        st.session_state['show_basic'] = True
+                        st.rerun()
+
+                if st.session_state.get('show_basic'):
+                    if not st.session_state.get('basic_report'):
+                        with st.spinner("Generating basic report for comparison..."):
                             try:
                                 sys_prompt = "You are a code quality expert. Analyze code and write reports."
                                 usr_prompt = f"Write a code quality report for this codebase:\n\n{summary_ctx}\n\n{llm_ctx}"
@@ -818,7 +822,6 @@ if st.session_state.get('analysis_done', False):
                             except Exception as e:
                                 st.session_state['basic_report'] = f"Error generating basic report: {e}"
 
-                if st.session_state.get('show_basic', False):
                     col_left, col_right = st.columns(2)
                     with col_left:
                         st.subheader("Grounded Prompt")
