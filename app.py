@@ -669,167 +669,156 @@ if st.session_state.get('analysis_done', False):
     temp_dir = st.session_state.get('temp_dir')
     is_remote = st.session_state.get('is_remote', False)
     remote_url = st.session_state.get('remote_url', '')
-    
-    try:
-        with st.spinner("Running static analysis with Lizard and Radon..."):
-            scored_results, summary_stats = run_analysis(run_dir)
-        
-        if is_remote and remote_url:
-            st.caption(f"Repository: {remote_url}")
-            
-        if not scored_results or summary_stats.get("total_functions", 0) == 0:
-            st.warning("No Python or Java files found in this directory")
-        else:
-            if analyze_btn:
-                st.success("Analysis complete!")
-                
-            top_risks = get_top_risks(scored_results, n=run_n)
-            
-            tab1, tab2, tab3 = st.tabs(["Metrics Dashboard", "AI Report", "Prompt Comparison"])
-            
-            with tab1:
-                col1, col2, col3, col4 = st.columns(4)
-                col1.metric("Total Functions", summary_stats.get("total_functions", 0))
-                col2.metric("Critical Count", summary_stats.get("critical_count", 0))
-                col3.metric("Average Complexity", summary_stats.get("average_complexity", 0.0))
-                col4.metric("Average Risk Score", summary_stats.get("average_risk_score", 0.0))
-            
-                st.divider()
-                st.markdown('<div class="cs-section-title">Codebase Health Telemetry</div>', unsafe_allow_html=True)
-                
-                crit = summary_stats.get("critical_count", 0)
-                high = summary_stats.get("high_count", 0)
-                mod = summary_stats.get("moderate_count", 0)
-                low = summary_stats.get("low_count", 0)
-                total = summary_stats.get("total_functions", 1) or 1
-            
-                # Futuristic Telemetry Board (EV Dash style)
-                st.markdown(f"""
-                <div class="cs-telemetry">
-                    <div class="cs-tile">
-                        <div class="cs-tile-value" style="color: #FF0000; text-shadow: 0 0 15px rgba(255,0,0,0.3);">{crit/total*100:.1f}<span>%</span></div>
-                        <div class="cs-tile-label">Critical Load</div>
-                        <div class="cs-tile-count">{crit} funcs</div>
-                    </div>
-                    <div class="cs-tile">
-                        <div class="cs-tile-value" style="color: #FF8C00; text-shadow: 0 0 15px rgba(255,140,0,0.3);">{high/total*100:.1f}<span>%</span></div>
-                        <div class="cs-tile-label">High Warning</div>
-                        <div class="cs-tile-count">{high} funcs</div>
-                    </div>
-                    <div class="cs-tile">
-                        <div class="cs-tile-value" style="color: #FFFF00; text-shadow: 0 0 15px rgba(255,255,0,0.3);">{mod/total*100:.1f}<span>%</span></div>
-                        <div class="cs-tile-label">Mod Activity</div>
-                        <div class="cs-tile-count">{mod} funcs</div>
-                    </div>
-                    <div class="cs-tile">
-                        <div class="cs-tile-value" style="color: #008000; text-shadow: 0 0 15px rgba(0,128,0,0.3);">{low/total*100:.1f}<span>%</span></div>
-                        <div class="cs-tile-label">Optimal State</div>
-                        <div class="cs-tile-count">{low} funcs</div>
-                    </div>
+
+    # Run analysis (cached - only executes once per directory)
+    scored_results, summary_stats = run_analysis(run_dir)
+
+    # Clean up temp dir after analysis is cached
+    if temp_dir:
+        cleanup_repo(temp_dir)
+        st.session_state['temp_dir'] = None
+
+    if is_remote and remote_url:
+        st.caption(f"Repository: {remote_url}")
+
+    if not scored_results or summary_stats.get("total_functions", 0) == 0:
+        st.warning("No Python or Java files found in this directory")
+    else:
+        top_risks = get_top_risks(scored_results, n=run_n)
+
+        # Pre-compute LLM context (needed by both tab2 and tab3)
+        summary_ctx = build_summary_context(summary_stats)
+        llm_ctx = build_llm_context(top_risks, run_dir, max_functions=run_n)
+
+        # Extract stats for dashboard
+        crit = summary_stats.get("critical_count", 0)
+        high = summary_stats.get("high_count", 0)
+        mod = summary_stats.get("moderate_count", 0)
+        low = summary_stats.get("low_count", 0)
+        total = summary_stats.get("total_functions", 1) or 1
+
+        tab1, tab2, tab3 = st.tabs(["Metrics Dashboard", "AI Report", "Prompt Comparison"])
+
+        # ==================== TAB 1: METRICS DASHBOARD ====================
+        with tab1:
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Total Functions", summary_stats.get("total_functions", 0))
+            col2.metric("Critical Count", summary_stats.get("critical_count", 0))
+            col3.metric("Average Complexity", summary_stats.get("average_complexity", 0.0))
+            col4.metric("Average Risk Score", summary_stats.get("average_risk_score", 0.0))
+
+            st.divider()
+            st.markdown('<div class="cs-section-title">Codebase Health Telemetry</div>', unsafe_allow_html=True)
+
+            st.markdown(f"""
+            <div class="cs-telemetry">
+                <div class="cs-tile">
+                    <div class="cs-tile-value" style="color: #FF0000; text-shadow: 0 0 15px rgba(255,0,0,0.3);">{crit/total*100:.1f}<span>%</span></div>
+                    <div class="cs-tile-label">Critical Load</div>
+                    <div class="cs-tile-count">{crit} funcs</div>
                 </div>
-                """, unsafe_allow_html=True)
-                st.markdown("<br>", unsafe_allow_html=True)
-                
-                # Monotone Bar Chart
-                risk_counts = {
-                    "Risk Level": ["Critical", "High", "Moderate", "Low"],
-                    "Count": [crit, high, mod, low]
-                }
-                df_dist = pd.DataFrame(risk_counts)
-                
-                chart = alt.Chart(df_dist).mark_bar(
-                    color='#334155',
-                    cornerRadiusTopLeft=4,
-                    cornerRadiusTopRight=4,
-                    size=50
-                ).encode(
-                    x=alt.X('Risk Level', sort=None, axis=alt.Axis(labelAngle=0, title='', labelColor='#94A3B8', labelFontSize=13, grid=False)),
-                    y=alt.Y('Count', axis=alt.Axis(labelAngle=0, title='COUNT', titleAngle=0, titleAlign='left', titleY=-20, titleX=-10, labelColor='#94A3B8', titleColor='#64748B', tickCount=4, grid=False))
-                ).properties(height=250, background='transparent')
-                
-                # EV Dash Chart Styling
-                chart = chart.configure_view(
-                    strokeWidth=0
-                ).configure_axis(
-                    grid=False,
-                    domainColor='#1E293B',
-                    tickColor='#1E293B'
-                )
-                
-                st.altair_chart(chart, use_container_width=True)
-                
-                st.markdown('<div class="cs-section-title">Top Risky Functions</div>', unsafe_allow_html=True)
-                cols_to_show = ["file", "function", "complexity", "nloc", "parameters", "risk_score", "risk_level", "complexity_grade"]
-                available_cols = [c for c in cols_to_show if c in top_risks[0]] if top_risks else []
-                df_risks = pd.DataFrame(top_risks)[available_cols] if top_risks else pd.DataFrame()
-                
-                def format_risk_level(level):
-                    if level == "critical": return "🔴 critical"
-                    if level == "high": return "🟠 high"
-                    if level == "moderate": return "🟡 moderate"
-                    return "🟢 low"
-                
-                if not df_risks.empty:
-                    if 'risk_score' in df_risks.columns:
-                        df_risks['risk_score'] = df_risks['risk_score'].apply(lambda x: f"{float(x):.1f}")
-                    if 'risk_level' in df_risks.columns:
-                        df_risks['risk_level'] = df_risks['risk_level'].apply(format_risk_level)
-                    
-                    st.dataframe(df_risks, use_container_width=True)
-                else:
-                    st.info("No risky functions found.")
-                
-                st.markdown('<div class="cs-section-title">Riskiest File</div>', unsafe_allow_html=True)
-                riskiest_file = html.escape(str(summary_stats.get("riskiest_file", "None")))
-                st.markdown(
-                    f'<div class="cs-file-pill">{riskiest_file}</div>',
-                    unsafe_allow_html=True,
-                )
-                
-            with tab2:
-                with st.expander("How this report was generated"):
-                    st.markdown("This report was generated using Google Gemini with a carefully engineered prompt that enforces grounded explanations. The LLM is constrained to only reference specific files, functions, and line numbers from the static analysis data, so it cannot hallucinate or make unsupported claims. This approach ensures that LLMs use deterministic ground truth for reliable code quality insights.")
-                    
-                summary_ctx = build_summary_context(summary_stats)
-                llm_ctx = build_llm_context(top_risks, run_dir, max_functions=run_n)
-                
-                if 'grounded_report' not in st.session_state:
-                    with st.spinner("Generating AI-powered quality report via Gemini..."):
-                        st.session_state['grounded_report'] = generate_report(summary_ctx, llm_ctx)
-                    
-                st.markdown(st.session_state['grounded_report'])
-                st.download_button("Download Report", data=st.session_state['grounded_report'], file_name="CodeScope_Report.md", mime="text/markdown")
-                
-                with st.expander("View raw analysis data"):
-                    st.json(top_risks)
-            
-            with tab3:
-                if not st.session_state.get('basic_report'):
-                    st.info("Click 'Run Comparison' to generate a basic (ungrounded) report and compare it side-by-side with the grounded report.")
-                    if st.button("Run Comparison", key="run_comparison_btn"):
-                        st.session_state['show_basic'] = True
-                        st.rerun()
+                <div class="cs-tile">
+                    <div class="cs-tile-value" style="color: #FF8C00; text-shadow: 0 0 15px rgba(255,140,0,0.3);">{high/total*100:.1f}<span>%</span></div>
+                    <div class="cs-tile-label">High Warning</div>
+                    <div class="cs-tile-count">{high} funcs</div>
+                </div>
+                <div class="cs-tile">
+                    <div class="cs-tile-value" style="color: #FFFF00; text-shadow: 0 0 15px rgba(255,255,0,0.3);">{mod/total*100:.1f}<span>%</span></div>
+                    <div class="cs-tile-label">Mod Activity</div>
+                    <div class="cs-tile-count">{mod} funcs</div>
+                </div>
+                <div class="cs-tile">
+                    <div class="cs-tile-value" style="color: #008000; text-shadow: 0 0 15px rgba(0,128,0,0.3);">{low/total*100:.1f}<span>%</span></div>
+                    <div class="cs-tile-label">Optimal State</div>
+                    <div class="cs-tile-count">{low} funcs</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
 
-                if st.session_state.get('show_basic'):
-                    if not st.session_state.get('basic_report'):
-                        with st.spinner("Generating basic report for comparison..."):
-                            try:
-                                sys_prompt = "You are a code quality expert. Analyze code and write reports."
-                                usr_prompt = f"Write a code quality report for this codebase:\n\n{summary_ctx}\n\n{llm_ctx}"
-                                m = setup_client(system_instruction=sys_prompt)
-                                resp = m.generate_content(usr_prompt)
-                                st.session_state['basic_report'] = resp.text
-                            except Exception as e:
-                                st.session_state['basic_report'] = f"Error generating basic report: {e}"
+            risk_counts = {
+                "Risk Level": ["Critical", "High", "Moderate", "Low"],
+                "Count": [crit, high, mod, low]
+            }
+            df_dist = pd.DataFrame(risk_counts)
 
-                    col_left, col_right = st.columns(2)
-                    with col_left:
-                        st.subheader("Grounded Prompt")
-                        st.markdown(st.session_state.get('grounded_report', ''))
-                    with col_right:
-                        st.subheader("Basic Prompt")
-                        st.markdown(st.session_state.get('basic_report', ''))
-    finally:
-        if temp_dir:
-            cleanup_repo(temp_dir)
-            st.session_state['temp_dir'] = None
+            chart = alt.Chart(df_dist).mark_bar(
+                color='#334155',
+                cornerRadiusTopLeft=4,
+                cornerRadiusTopRight=4,
+                size=50
+            ).encode(
+                x=alt.X('Risk Level', sort=None, axis=alt.Axis(labelAngle=0, title='', labelColor='#94A3B8', labelFontSize=13, grid=False)),
+                y=alt.Y('Count', axis=alt.Axis(labelAngle=0, title='COUNT', titleAngle=0, titleAlign='left', titleY=-20, titleX=-10, labelColor='#94A3B8', titleColor='#64748B', tickCount=4, grid=False))
+            ).properties(height=250, background='transparent')
+
+            chart = chart.configure_view(
+                strokeWidth=0
+            ).configure_axis(
+                grid=False,
+                domainColor='#1E293B',
+                tickColor='#1E293B'
+            )
+
+            st.altair_chart(chart, use_container_width=True)
+
+            st.markdown('<div class="cs-section-title">Top Risky Functions</div>', unsafe_allow_html=True)
+            cols_to_show = ["file", "function", "complexity", "nloc", "parameters", "risk_score", "risk_level", "complexity_grade"]
+            available_cols = [c for c in cols_to_show if c in top_risks[0]] if top_risks else []
+            df_risks = pd.DataFrame(top_risks)[available_cols] if top_risks else pd.DataFrame()
+
+            risk_emoji = {"critical": "🔴 critical", "high": "🟠 high", "moderate": "🟡 moderate", "low": "🟢 low"}
+
+            if not df_risks.empty:
+                if 'risk_score' in df_risks.columns:
+                    df_risks['risk_score'] = df_risks['risk_score'].apply(lambda x: f"{float(x):.1f}")
+                if 'risk_level' in df_risks.columns:
+                    df_risks['risk_level'] = df_risks['risk_level'].apply(lambda x: risk_emoji.get(x, x))
+                st.dataframe(df_risks, use_container_width=True)
+            else:
+                st.info("No risky functions found.")
+
+            st.markdown('<div class="cs-section-title">Riskiest File</div>', unsafe_allow_html=True)
+            riskiest_file = html.escape(str(summary_stats.get("riskiest_file", "None")))
+            st.markdown(f'<div class="cs-file-pill">{riskiest_file}</div>', unsafe_allow_html=True)
+
+        # ==================== TAB 2: AI REPORT ====================
+        with tab2:
+            with st.expander("How this report was generated"):
+                st.markdown("This report was generated using Google Gemini with a carefully engineered prompt that enforces grounded explanations. The LLM is constrained to only reference specific files, functions, and line numbers from the static analysis data, so it cannot hallucinate or make unsupported claims. This approach ensures that LLMs use deterministic ground truth for reliable code quality insights.")
+
+            if 'grounded_report' not in st.session_state:
+                with st.spinner("Generating AI-powered quality report via Gemini..."):
+                    st.session_state['grounded_report'] = generate_report(summary_ctx, llm_ctx)
+
+            st.markdown(st.session_state.get('grounded_report', ''))
+            st.download_button("Download Report", data=st.session_state.get('grounded_report', ''), file_name="CodeScope_Report.md", mime="text/markdown")
+
+            with st.expander("View raw analysis data"):
+                st.json(top_risks)
+
+        # ==================== TAB 3: PROMPT COMPARISON ====================
+        with tab3:
+            # Show generate button only if no basic report yet
+            if not st.session_state.get('basic_report'):
+                st.info("Click 'Run Comparison' to generate a basic (ungrounded) report and compare it side-by-side with the grounded report.")
+                if st.button("Run Comparison", key="run_comparison_btn"):
+                    with st.spinner("Generating basic report for comparison..."):
+                        try:
+                            sys_prompt = "You are a code quality expert. Analyze code and write reports."
+                            usr_prompt = f"Write a code quality report for this codebase:\n\n{summary_ctx}\n\n{llm_ctx}"
+                            m = setup_client(system_instruction=sys_prompt)
+                            resp = m.generate_content(usr_prompt)
+                            st.session_state['basic_report'] = resp.text
+                        except Exception as e:
+                            st.session_state['basic_report'] = f"Error generating basic report: {e}"
+
+            # Show side-by-side comparison if basic report exists
+            if st.session_state.get('basic_report'):
+                col_left, col_right = st.columns(2)
+                with col_left:
+                    st.subheader("Grounded Prompt")
+                    st.markdown(st.session_state.get('grounded_report', ''))
+                with col_right:
+                    st.subheader("Basic Prompt")
+                    st.markdown(st.session_state.get('basic_report', ''))
