@@ -13,6 +13,7 @@ from analyzer import analyze_directory, enrich_with_radon
 from scorer import score_and_rank, get_top_risks, get_summary_stats
 from snippet_extractor import build_llm_context, build_summary_context
 from report_generator import generate_report, setup_client
+from repo_handler import is_github_url, clone_repo, cleanup_repo
 
 st.set_page_config(
     page_title="CodeScope",
@@ -594,7 +595,8 @@ with st.sidebar:
         </div>
     </div>
     """, unsafe_allow_html=True)
-    directory_input = st.text_input("Directory Path", value="", placeholder="e.g. /tmp/test-requests")
+    directory_input = st.text_input("Local path or GitHub URL", value="", placeholder="e.g. /tmp/test-requests or https://github.com/user/repo")
+    st.sidebar.caption("Supports local directories and public GitHub repos")
     st.markdown("<div style='font-size: 0.8rem; color: #64748B; margin-top: -10px; margin-bottom: 15px;'>Press Enter to lock in path</div>", unsafe_allow_html=True)
     top_n = int(st.number_input("Top N risky functions to analyze", value=5, min_value=1, max_value=20))
     st.divider()
@@ -605,15 +607,37 @@ with st.sidebar:
 
 if analyze_btn:
     if not directory_input.strip():
-        st.warning("Please enter a directory path")
-    elif not os.path.exists(directory_input.strip()):
-        st.error(f"Directory '{directory_input}' not found")
+        st.warning("Please enter a directory path or GitHub URL")
     else:
-        st.session_state['analysis_done'] = True
-        st.session_state['run_dir'] = directory_input.strip()
-        st.session_state['run_top_n'] = top_n
-        for k in ['grounded_report', 'basic_report', 'show_basic']:
-            st.session_state.pop(k, None)
+        input_normalized = directory_input.strip()
+        temp_dir = None
+        repo_url = None
+        
+        try:
+            if is_github_url(input_normalized):
+                with st.spinner("Cloning repository..."):
+                    temp_dir, repo_url = clone_repo(input_normalized)
+                analysis_path = temp_dir
+                st.session_state['is_remote'] = True
+                st.session_state['remote_url'] = repo_url
+            else:
+                if not os.path.exists(input_normalized):
+                    st.error(f"Directory '{input_normalized}' not found")
+                    st.stop()
+                analysis_path = input_normalized
+                st.session_state['is_remote'] = False
+            
+            st.session_state['analysis_done'] = True
+            st.session_state['run_dir'] = analysis_path
+            st.session_state['run_top_n'] = top_n
+            st.session_state['temp_dir'] = temp_dir
+            for k in ['grounded_report', 'basic_report', 'show_basic']:
+                st.session_state.pop(k, None)
+        except RuntimeError as e:
+            st.error(f"Failed to clone repository: {e}")
+            if temp_dir:
+                cleanup_repo(temp_dir)
+            st.stop()
 
 if not st.session_state.get('analysis_done', False):
     st.markdown("""
@@ -642,35 +666,42 @@ if not st.session_state.get('analysis_done', False):
 if st.session_state.get('analysis_done', False):
     run_dir = st.session_state['run_dir']
     run_n = st.session_state['run_top_n']
-
-    with st.spinner("Running static analysis with Lizard and Radon..."):
-        scored_results, summary_stats = run_analysis(run_dir)
+    temp_dir = st.session_state.get('temp_dir')
+    is_remote = st.session_state.get('is_remote', False)
+    remote_url = st.session_state.get('remote_url', '')
+    
+    try:
+        with st.spinner("Running static analysis with Lizard and Radon..."):
+            scored_results, summary_stats = run_analysis(run_dir)
         
-    if not scored_results or summary_stats.get("total_functions", 0) == 0:
-        st.warning("No Python or Java files found in this directory")
-    else:
-        if analyze_btn:
-            st.success("Analysis complete!")
+        if is_remote and remote_url:
+            st.caption(f"Repository: {remote_url}")
             
-        top_risks = get_top_risks(scored_results, n=run_n)
-        
-        tab1, tab2, tab3 = st.tabs(["Metrics Dashboard", "AI Report", "Prompt Comparison"])
-        
-        with tab1:
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Total Functions", summary_stats.get("total_functions", 0))
-            col2.metric("Critical Count", summary_stats.get("critical_count", 0))
-            col3.metric("Average Complexity", summary_stats.get("average_complexity", 0.0))
-            col4.metric("Average Risk Score", summary_stats.get("average_risk_score", 0.0))
+        if not scored_results or summary_stats.get("total_functions", 0) == 0:
+            st.warning("No Python or Java files found in this directory")
+        else:
+            if analyze_btn:
+                st.success("Analysis complete!")
+                
+            top_risks = get_top_risks(scored_results, n=run_n)
             
-            st.divider()
-            st.markdown('<div class="cs-section-title">Codebase Health Telemetry</div>', unsafe_allow_html=True)
+            tab1, tab2, tab3 = st.tabs(["Metrics Dashboard", "AI Report", "Prompt Comparison"])
             
-            crit = summary_stats.get("critical_count", 0)
-            high = summary_stats.get("high_count", 0)
-            mod = summary_stats.get("moderate_count", 0)
-            low = summary_stats.get("low_count", 0)
-            total = summary_stats.get("total_functions", 1) or 1
+            with tab1:
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Total Functions", summary_stats.get("total_functions", 0))
+                col2.metric("Critical Count", summary_stats.get("critical_count", 0))
+                col3.metric("Average Complexity", summary_stats.get("average_complexity", 0.0))
+                col4.metric("Average Risk Score", summary_stats.get("average_risk_score", 0.0))
+            
+                st.divider()
+                st.markdown('<div class="cs-section-title">Codebase Health Telemetry</div>', unsafe_allow_html=True)
+                
+                crit = summary_stats.get("critical_count", 0)
+                high = summary_stats.get("high_count", 0)
+                mod = summary_stats.get("moderate_count", 0)
+                low = summary_stats.get("low_count", 0)
+                total = summary_stats.get("total_functions", 1) or 1
             
             # Futuristic Telemetry Board (EV Dash style)
             st.markdown(f"""
@@ -752,46 +783,50 @@ if st.session_state.get('analysis_done', False):
             riskiest_file = html.escape(str(summary_stats.get("riskiest_file", "None")))
             st.markdown(
                 f'<div class="cs-file-pill">{riskiest_file}</div>',
-                unsafe_allow_html=True,
-            )
-            
-        with tab2:
-            with st.expander("How this report was generated"):
-                st.markdown("This report was generated using Google Gemini with a carefully engineered prompt that enforces grounded explanations. The LLM is constrained to only reference specific files, functions, and line numbers from the static analysis data, so it cannot hallucinate or make unsupported claims. This approach ensures that LLMs use deterministic ground truth for reliable code quality insights.")
+                    unsafe_allow_html=True,
+                )
                 
-            summary_ctx = build_summary_context(summary_stats)
-            llm_ctx = build_llm_context(top_risks, run_dir, max_functions=run_n)
-            
-            if 'grounded_report' not in st.session_state:
-                with st.spinner("Generating AI-powered quality report via Gemini..."):
-                    st.session_state['grounded_report'] = generate_report(summary_ctx, llm_ctx)
+            with tab2:
+                with st.expander("How this report was generated"):
+                    st.markdown("This report was generated using Google Gemini with a carefully engineered prompt that enforces grounded explanations. The LLM is constrained to only reference specific files, functions, and line numbers from the static analysis data, so it cannot hallucinate or make unsupported claims. This approach ensures that LLMs use deterministic ground truth for reliable code quality insights.")
+                    
+                summary_ctx = build_summary_context(summary_stats)
+                llm_ctx = build_llm_context(top_risks, run_dir, max_functions=run_n)
                 
-            st.markdown(st.session_state['grounded_report'])
-            st.download_button("Download Report", data=st.session_state['grounded_report'], file_name="CodeScope_Report.md", mime="text/markdown")
+                if 'grounded_report' not in st.session_state:
+                    with st.spinner("Generating AI-powered quality report via Gemini..."):
+                        st.session_state['grounded_report'] = generate_report(summary_ctx, llm_ctx)
+                    
+                st.markdown(st.session_state['grounded_report'])
+                st.download_button("Download Report", data=st.session_state['grounded_report'], file_name="CodeScope_Report.md", mime="text/markdown")
+                
+                with st.expander("View raw analysis data"):
+                    st.json(top_risks)
             
-            with st.expander("View raw analysis data"):
-                st.json(top_risks)
-        
-        with tab3:
-            st.info("Click 'Run Comparison' to generate a basic (ungrounded) report and compare it side-by-side with the grounded report.")
-            if st.button("Run Comparison"):
-                st.session_state['show_basic'] = True
-                if 'basic_report' not in st.session_state:
-                    with st.spinner("Generating basic ungrounded report..."):
-                        try:
-                            sys_prompt = "You are a code quality expert. Analyze code and write reports."
-                            usr_prompt = f"Write a code quality report for this codebase:\n\n{summary_ctx}\n\n{llm_ctx}"
-                            m = setup_client(system_instruction=sys_prompt)
-                            resp = m.generate_content(usr_prompt)
-                            st.session_state['basic_report'] = resp.text
-                        except Exception as e:
-                            st.session_state['basic_report'] = f"Error generating basic report: {e}"
+            with tab3:
+                st.info("Click 'Run Comparison' to generate a basic (ungrounded) report and compare it side-by-side with the grounded report.")
+                if st.button("Run Comparison"):
+                    st.session_state['show_basic'] = True
+                    if 'basic_report' not in st.session_state:
+                        with st.spinner("Generating basic ungrounded report..."):
+                            try:
+                                sys_prompt = "You are a code quality expert. Analyze code and write reports."
+                                usr_prompt = f"Write a code quality report for this codebase:\n\n{summary_ctx}\n\n{llm_ctx}"
+                                m = setup_client(system_instruction=sys_prompt)
+                                resp = m.generate_content(usr_prompt)
+                                st.session_state['basic_report'] = resp.text
+                            except Exception as e:
+                                st.session_state['basic_report'] = f"Error generating basic report: {e}"
 
-            if st.session_state.get('show_basic', False):
-                col_left, col_right = st.columns(2)
-                with col_left:
-                    st.subheader("Grounded Prompt")
-                    st.markdown(st.session_state.get('grounded_report', ''))
-                with col_right:
-                    st.subheader("Basic Prompt")
-                    st.markdown(st.session_state.get('basic_report', ''))
+                if st.session_state.get('show_basic', False):
+                    col_left, col_right = st.columns(2)
+                    with col_left:
+                        st.subheader("Grounded Prompt")
+                        st.markdown(st.session_state.get('grounded_report', ''))
+                    with col_right:
+                        st.subheader("Basic Prompt")
+                        st.markdown(st.session_state.get('basic_report', ''))
+    finally:
+        if temp_dir:
+            cleanup_repo(temp_dir)
+            st.session_state['temp_dir'] = None
