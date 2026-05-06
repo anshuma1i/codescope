@@ -128,6 +128,34 @@ st.markdown("""
         text-shadow: 0 0 34px rgba(255, 75, 75, 0.24);
     }
 
+    .cs-hero h1 a {
+        color: inherit !important;
+        text-decoration: none !important;
+        position: relative;
+        transition: all 0.3s ease;
+    }
+
+    .cs-hero h1 a::after {
+        content: "🔗";
+        font-size: 2.2rem;
+        position: absolute;
+        right: -3.5rem;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0;
+        transition: all 0.3s ease;
+        filter: drop-shadow(0 0 8px var(--cs-accent));
+    }
+
+    .cs-hero h1 a:hover {
+        text-shadow: 0 0 45px rgba(255, 75, 75, 0.45);
+    }
+
+    .cs-hero h1 a:hover::after {
+        opacity: 1;
+        right: -2.8rem;
+    }
+
     .cs-hero p {
         margin: 0.85rem 0 0;
         color: var(--cs-text);
@@ -562,7 +590,7 @@ st.markdown("""
 </style>
 <div class="cs-hero">
     <div class="cs-hero-kicker"><span></span> Static Analysis Control Deck</div>
-    <h1>CodeScope</h1>
+    <h1><a href="https://github.com/anshuma1i/codescope" target="_blank">CodeScope</a></h1>
     <p>An AI-powered code quality analyzer</p>
     <div class="cs-hero-strip">
         <span>Lizard</span>
