@@ -800,18 +800,24 @@ if st.session_state.get('analysis_done', False):
         # ==================== TAB 3: PROMPT COMPARISON ====================
         with tab3:
             # Show generate button only if no basic report yet
-            if not st.session_state.get('basic_report'):
+            if not st.session_state.get('basic_report') and not st.session_state.get('running_comparison'):
                 st.info("Click 'Run Comparison' to generate a basic (ungrounded) report and compare it side-by-side with the grounded report.")
                 if st.button("Run Comparison", key="run_comparison_btn"):
-                    with st.spinner("Generating basic report for comparison..."):
-                        try:
-                            sys_prompt = "You are a code quality expert. Analyze code and write reports."
-                            usr_prompt = f"Write a code quality report for this codebase:\n\n{summary_ctx}\n\n{llm_ctx}"
-                            m = setup_client(system_instruction=sys_prompt)
-                            resp = m.generate_content(usr_prompt)
-                            st.session_state['basic_report'] = resp.text
-                        except Exception as e:
-                            st.session_state['basic_report'] = f"Error generating basic report: {e}"
+                    st.session_state['running_comparison'] = True
+                    st.rerun()
+
+            if st.session_state.get('running_comparison') and not st.session_state.get('basic_report'):
+                with st.spinner("Generating basic report for comparison..."):
+                    try:
+                        sys_prompt = "You are a code quality expert. Analyze code and write reports."
+                        usr_prompt = f"Write a code quality report for this codebase:\n\n{summary_ctx}\n\n{llm_ctx}"
+                        m = setup_client(system_instruction=sys_prompt)
+                        resp = m.generate_content(usr_prompt)
+                        st.session_state['basic_report'] = resp.text
+                    except Exception as e:
+                        st.session_state['basic_report'] = f"Error generating basic report: {e}"
+                    st.session_state['running_comparison'] = False
+                    st.rerun()
 
             # Show side-by-side comparison if basic report exists
             if st.session_state.get('basic_report'):
