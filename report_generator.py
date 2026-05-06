@@ -10,11 +10,23 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 
 def setup_client(system_instruction: str = None) -> genai.GenerativeModel:
-    """Loads GEMINI_API_KEY from .env, configures API, and returns the model."""
-    load_dotenv()
-    api_key = os.environ.get("GEMINI_API_KEY")
+    """Loads GEMINI_API_KEY from Streamlit Cloud secrets or local .env file, configures API, and returns the model."""
+    api_key = None
+    
+    # Try Streamlit Cloud secrets first
+    try:
+        import streamlit as st
+        api_key = st.secrets.get("GEMINI_API_KEY")
+    except Exception:
+        api_key = None
+    
+    # Fall back to local .env file
+    if not api_key:
+        load_dotenv()
+        api_key = os.environ.get("GEMINI_API_KEY")
+    
     if not api_key or api_key == "your-key-here":
-        raise ValueError("GEMINI_API_KEY is missing or incorrectly set in .env file. Please provide a valid key.")
+        raise ValueError("GEMINI_API_KEY is missing or incorrectly set. Please provide a valid key in Streamlit Cloud secrets or .env file.")
     
     genai.configure(api_key=api_key)
     
