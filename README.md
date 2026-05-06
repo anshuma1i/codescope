@@ -4,10 +4,10 @@ AI-powered code quality analyzer combining deterministic static analysis with LL
 
 ## Motivation
 
-CodeScope was built as a demonstration project for the AI R&D Engineer position at Software Improvement Group (SIG). It was developed after researching SIG's Sigrid platform, specifically its "AI Explanations" features and architectural philosophy. 
+CodeScope addresses a critical gap in code quality analysis: making technical metrics accessible to non-technical stakeholders while maintaining rigor and trustworthiness.
 
-Key motivators include:
-*   **Deterministic Ground Truth:** Inspired by SIG's philosophy that while LLMs are incredibly powerful, they are prone to hallucination. CodeScope tethers LLM reasoning directly to hard, deterministic software metrics to ensure trustworthiness.
+Key design principles:
+*   **Deterministic Ground Truth:** While LLMs are powerful, they are prone to hallucination. CodeScope tethers LLM reasoning directly to hard, deterministic software metrics to ensure trustworthiness.
 *   **The "Shift Up" Approach:** Translating dense technical metrics (like cyclomatic complexity and maintainability indices) into accessible business language tailored for CTOs and engineering managers.
 *   **Aligning with Industry Standards:** Referencing core tenets from Heitlager et al. (2007) "A Practical Model for Measuring Maintainability", ISO 25010 standards, and the conceptual framing of SIG's Sigrid MCP architecture.
 
