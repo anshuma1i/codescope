@@ -624,7 +624,6 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
     directory_input = st.text_input("Local path or GitHub URL", value="", placeholder="e.g. /tmp/test-requests or https://github.com/user/repo")
-    st.sidebar.caption("Supports local directories and public GitHub repos")
     st.markdown("<div style='font-size: 0.8rem; color: #64748B; margin-top: -10px; margin-bottom: 15px;'>Press Enter to lock in path</div>", unsafe_allow_html=True)
     top_n = int(st.number_input("Top N risky functions to analyze", value=5, min_value=1, max_value=20))
     st.divider()
