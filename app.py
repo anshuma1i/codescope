@@ -5,6 +5,7 @@ Main entry point for the CodeScope interactive web application.
 
 import os
 import html
+import datetime
 import pandas as pd
 import streamlit as st
 import altair as alt
@@ -182,8 +183,7 @@ st.markdown("""
         letter-spacing: 0;
     }
     
-    /* FUTURISTIC TABS STYLING */
-    [data-testid="stTabs"] [data-baseweb="tablist"] {
+    /* FUTURISTIC TABS STYLING */[data-testid="stTabs"] [data-baseweb="tablist"] {
         gap: 0.55rem;
         width: 100%;
         justify-content: space-between;
@@ -222,9 +222,7 @@ st.markdown("""
         background: rgba(255, 75, 75, 0.1) !important;
         border: 1px solid rgba(255, 75, 75, 0.5) !important;
         box-shadow: 0 0 15px rgba(255, 75, 75, 0.2) !important;
-    }
-    
-    [data-testid="stTabs"] [data-baseweb="tab-highlight"] {
+    }[data-testid="stTabs"] [data-baseweb="tab-highlight"] {
         display: none;
     }
     
@@ -298,11 +296,8 @@ st.markdown("""
         font-weight: 800;
         padding: 0.42rem 0.5rem;
         text-align: center;
-    }
-
-    [data-testid="stSidebar"] label,
-    [data-testid="stSidebar"] .stMarkdown,
-    [data-testid="stSidebar"] p {
+    }[data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] .stMarkdown,[data-testid="stSidebar"] p {
         color: var(--cs-muted) !important;
     }
 
@@ -314,9 +309,7 @@ st.markdown("""
         color: var(--cs-text) !important;
         font-weight: 650 !important;
         box-shadow: inset 0 1px 0 rgba(255,255,255,0.035) !important;
-    }
-
-    [data-testid="stTextInput"] input:focus,
+    }[data-testid="stTextInput"] input:focus,
     [data-testid="stNumberInput"] input:focus {
         border-color: rgba(255, 75, 75, 0.72) !important;
         box-shadow: 0 0 0 1px rgba(255, 75, 75, 0.18), 0 0 28px rgba(255, 75, 75, 0.12) !important;
@@ -507,11 +500,8 @@ st.markdown("""
         font-size: 0.92rem;
         overflow-wrap: anywhere;
         box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
-    }
-
-    [data-testid="stDataFrame"],
-    [data-testid="stJson"],
-    [data-testid="stExpander"] {
+    }[data-testid="stDataFrame"],
+    [data-testid="stJson"],[data-testid="stExpander"] {
         border-radius: 8px !important;
         overflow: hidden !important;
     }
@@ -521,17 +511,14 @@ st.markdown("""
         background: rgba(10, 15, 28, 0.74) !important;
     }
 
-    [data-testid="stDownloadButton"] button,
-    [data-testid="stButton"] button {
+    [data-testid="stDownloadButton"] button,[data-testid="stButton"] button {
         border-radius: 8px !important;
         font-weight: 800 !important;
         letter-spacing: 0 !important;
         border: 1px solid rgba(148, 163, 184, 0.18) !important;
         background: rgba(13, 20, 36, 0.92) !important;
         color: var(--cs-text) !important;
-    }
-
-    [data-testid="stDownloadButton"] button:hover,
+    }[data-testid="stDownloadButton"] button:hover,
     [data-testid="stButton"] button:hover {
         border-color: rgba(255, 75, 75, 0.55) !important;
         color: white !important;
@@ -548,8 +535,7 @@ st.markdown("""
         visibility: visible !important;
         background: transparent !important;
     }
-    [data-testid="stToolbarActions"],
-    [data-testid="stStatusWidget"],
+    [data-testid="stToolbarActions"],[data-testid="stStatusWidget"],
     [data-testid="stMainMenu"],
     [data-testid="stAppDeployButton"] {
         display: none !important;
@@ -658,7 +644,7 @@ if analyze_btn:
             st.session_state['run_dir'] = analysis_path
             st.session_state['run_top_n'] = top_n
             st.session_state['temp_dir'] = temp_dir
-            for k in ['grounded_report', 'basic_report', 'show_basic']:
+            for k in['grounded_report', 'basic_report', 'show_basic']:
                 st.session_state.pop(k, None)
         except RuntimeError as e:
             st.error(f"Failed to clone repository: {e}")
@@ -764,7 +750,7 @@ if st.session_state.get('analysis_done', False):
             st.markdown("<br>", unsafe_allow_html=True)
 
             risk_counts = {
-                "Risk Level": ["Critical", "High", "Moderate", "Low"],
+                "Risk Level":["Critical", "High", "Moderate", "Low"],
                 "Count": [crit, high, mod, low]
             }
             df_dist = pd.DataFrame(risk_counts)
@@ -790,8 +776,8 @@ if st.session_state.get('analysis_done', False):
             st.altair_chart(chart, use_container_width=True)
 
             st.markdown('<div class="cs-section-title">Top Risky Functions</div>', unsafe_allow_html=True)
-            cols_to_show = ["file", "function", "complexity", "nloc", "parameters", "risk_score", "risk_level", "complexity_grade"]
-            available_cols = [c for c in cols_to_show if c in top_risks[0]] if top_risks else []
+            cols_to_show =["file", "function", "complexity", "nloc", "parameters", "risk_score", "risk_level", "complexity_grade"]
+            available_cols =[c for c in cols_to_show if c in top_risks[0]] if top_risks else[]
             df_risks = pd.DataFrame(top_risks)[available_cols] if top_risks else pd.DataFrame()
 
             risk_emoji = {"critical": "🔴 critical", "high": "🟠 high", "moderate": "🟡 moderate", "low": "🟢 low"}
@@ -836,8 +822,9 @@ if st.session_state.get('analysis_done', False):
             if st.session_state.get('running_comparison') and not st.session_state.get('basic_report'):
                 with st.spinner("Generating basic report for comparison..."):
                     try:
+                        current_date = datetime.date.today().strftime('%B %d, %Y')
                         sys_prompt = "You are a code quality expert. Analyze code and write reports."
-                        usr_prompt = f"Write a code quality report for this codebase:\n\n{summary_ctx}\n\n{llm_ctx}"
+                        usr_prompt = f"Write a code quality report for this codebase. Use this exact date in your header: {current_date}.\n\n{summary_ctx}\n\n{llm_ctx}"
                         m = setup_client(system_instruction=sys_prompt)
                         resp = m.generate_content(usr_prompt)
                         st.session_state['basic_report'] = resp.text

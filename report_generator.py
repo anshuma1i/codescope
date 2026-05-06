@@ -5,6 +5,7 @@ Will call Gemini API to generate reports based on code analysis and risk scores.
 
 import os
 import sys
+import datetime
 from typing import Tuple, Dict, Any
 from dotenv import load_dotenv
 import google.generativeai as genai
@@ -36,6 +37,8 @@ def setup_client(system_instruction: str = None) -> genai.GenerativeModel:
 
 def build_grounded_prompt(summary_context: str, llm_context: str) -> Tuple[str, str]:
     """Returns the system and user prompts with grounded strict rules."""
+    current_date = datetime.date.today().strftime('%B %d, %Y')
+    
     system_prompt = """You are a senior software quality consultant who writes reports for CTOs and engineering managers. Your job is to translate technical code quality findings into clear business language.
 
 STRICT RULES:
@@ -52,6 +55,9 @@ REPORT STRUCTURE:
 4. Recommended Action Plan (prioritized list of what to fix first and why, estimated effort as low/medium/high)"""
 
     user_prompt = f"""Analyze the following codebase and generate a quality report.
+
+IMPORTANT FORMATTING RULE: 
+- Use this exact date for the report header: {current_date}
 
 {summary_context}
 
@@ -74,6 +80,7 @@ def generate_report(summary_context: str, llm_context: str) -> str:
 def generate_report_comparison(summary_context: str, llm_context: str) -> Dict[str, str]:
     """Generates TWO reports with different prompting strategies to show prompt engineering awareness."""
     results = {}
+    current_date = datetime.date.today().strftime('%B %d, %Y')
     
     try:
         # Strategy A ("grounded")
@@ -87,7 +94,7 @@ def generate_report_comparison(summary_context: str, llm_context: str) -> Dict[s
     try:
         # Strategy B ("basic")
         system_b = "You are a code quality expert. Analyze code and write reports."
-        user_b = f"Write a code quality report for this codebase:\n\n{summary_context}\n\n{llm_context}"
+        user_b = f"Write a code quality report for this codebase. Use this exact date in your header: {current_date}.\n\n{summary_context}\n\n{llm_context}"
         model_b = setup_client(system_instruction=system_b)
         response_b = model_b.generate_content(user_b)
         results["basic"] = response_b.text
