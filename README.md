@@ -1,99 +1,75 @@
-# CodeScope 🔬
+# CodeScope
 
-AI-powered code quality analyzer combining deterministic static analysis with LLM-generated reports for non-technical stakeholders.
+A code quality analysis tool that scans a repository, identifies risky functions, generates AI explanations for non-technical managers, and scores the trustworthiness of those explanations.
 
-## Motivation
+## The Problem
 
-CodeScope addresses a critical gap in code quality analysis: making technical metrics accessible to non-technical stakeholders while maintaining rigor and trustworthiness.
+Static analysis tools (Lizard, Radon) produce deterministic metrics — cyclomatic complexity, lines of code, maintainability index — that developers understand but managers don't. AI can translate those numbers into plain English, bridging the gap between technical findings and business decisions.
 
-Key design principles:
-*   **Deterministic Ground Truth:** While LLMs are powerful, they are prone to hallucination. CodeScope tethers LLM reasoning directly to hard, deterministic software metrics to ensure trustworthiness.
-*   **The "Shift Up" Approach:** Translating dense technical metrics (like cyclomatic complexity and maintainability indices) into accessible business language tailored for CTOs and engineering managers.
-*   **Aligning with Industry Standards:** Referencing core tenets from Heitlager et al. (2007) "A Practical Model for Measuring Maintainability", ISO 25010 standards, and the conceptual framing of SIG's Sigrid MCP architecture.
+But AI explanations can be confidently wrong. A model can describe a critical-risk function as "straightforward and simple" without contradicting any metric, and no existing tool checks for this. SIG's Sigrid offers AI Explanations but has no trust layer. That's the gap CodeScope addresses with Polygraph — a trust scorer that verifies each explanation against the data it claims to represent.
 
-## Architecture
+## How It Works
 
-CodeScope operates on a modular, 4-layer pipeline to process source code into executive reports:
+1. **Scan** — point CodeScope at a local directory or GitHub URL. It runs Lizard and Radon across every Python and Java file to extract cyclomatic complexity, lines of code, maintainability index, function boundaries, and parameter counts.
 
-1.  **Static Analysis Layer (Lizard + Radon)** — Extracts core deterministic metrics from Python and Java code (NLOC, Complexity, Parameters, Tokens, Maintainability Index, and Grades).
-2.  **Risk Scoring Layer** — Prioritizes findings using a weighted heuristic formula combining complexity, size, parameters, and maintainability scores to rank the riskiest functions.
-3.  **LLM Report Generation Layer (Gemini API)** — Compiles the flagged functions and their actual source code snippets into grounded, evidence-based reports using strict anti-hallucination system prompt constraints.
-4.  **Presentation Layer (Streamlit)** — Surfaces the data via an interactive dashboard displaying metrics visualizations alongside the generated AI reports.
+2. **Score** — each function is ranked by a weighted risk formula that combines complexity, NLOC, and maintainability into a 0–100 risk score. Functions are bucketed into Critical, High, Moderate, or Low.
 
-```text
-┌──────────────┐      ┌─────────────────────────┐      ┌─────────────────────┐
-│ Source Code  │───>│ 1. Static Analysis Layer  │───>│ 2. Risk Scoring Layer │
-│ (.py, .java) │      │   (Lizard & Radon)      │      │   (Heuristic Logic) │
-└──────────────┘      └─────────────────────────┘      └─────────────────────┘
-                                                                  │
-                                                                  ▼
-┌──────────────────┐  ┌─────────────────────────┐      ┌─────────────────────┐
-│ User Dashboard   │<───│ 4. Presentation Layer │<───│ 3. LLM Report Layer │
-│ (Streamlit App)  │  │   (Metrics & UI)        │      │   (Gemini API)      │
-└──────────────────┘  └─────────────────────────┘      └─────────────────────┘
+3. **Explain** — the top-N riskiest functions are fed to Gemini 2.5 Flash with a grounded prompt that forces the model to mention the real function name, file, complexity number, and risk level. The output is a manager-friendly paragraph explaining why the function matters and what should be done.
+
+4. **Polygraph** — each explanation is run through four independent trust checks. The model is re-queried multiple times, the explanation is scanned for facts, sentiment, and hedging, and everything is combined into a single trust score.
+
+5. **Display** — the Streamlit UI shows a trust score (0–100), four sub-score bars, a verdict (TRUST / REVIEW / FLAG), and a reason sentence identifying the weakest dimension.
+
+## Polygraph — The Trust Scorer
+
+Polygraph runs four checks on every explanation. Each produces a 0–100 score; they are weighted and combined.
+
+- **Self-consistency (20%)** — the model is asked to explain the same function three more times. All four explanations (including the original) are compared pairwise using word overlap, with function names and file names stripped to avoid artificially inflating agreement. Low consistency means the model is improvising rather than reasoning from fixed data.
+
+- **Grounding (30%)** — checks whether the explanation mentions the real function name, file basename, complexity value, and risk level. A generic explanation that could describe any function scores zero.
+
+- **Sentiment alignment (35%)** — checks whether the explanation's tone matches the function's actual risk level. Critical and high-risk functions should sound urgent (words like "dangerous", "must", "failure"). Low-risk functions should sound reassuring ("straightforward", "robust", "unlikely"). Contradictions — a critical function described as "manageable" — are penalized heavily. Moderate-risk functions are treated as neutral.
+
+- **Confidence (15%)** — counts hedging language ("might", "seems", "possibly"). Each hedge costs 20 points. Low weight because hedging is a crude proxy.
+
+The verdict thresholds are fixed: TRUST ≥ 70, REVIEW ≥ 45, FLAG < 45.
+
+### Proven by contradiction test
+
+| Scenario | Verdict | Sentiment | Trust Score |
+|---|---|---|---|
+| Low risk + reassuring explanation | TRUST | 100/100 | 83.3 |
+| Critical risk + honest explanation | TRUST | 100/100 | 76.9 \* |
+| Critical risk + reassuring explanation | FLAG | 0/100 | 33.4 |
+
+\*Scores vary slightly between runs due to the sampling-based consistency check.
+
+The third row is the key test — a deliberately contradictory explanation that any human reader would spot as wrong. Polygraph catches it. The first two rows confirm that Polygraph does not produce false alarms when the explanation is honest.
+
+## The Research Direction
+
+The current Polygraph uses sampling-based proxies — it infers trustworthiness from output patterns rather than reading the model's internals. The frontier is Natural Language Autoencoders (Fraser-Taliente et al., 2026), a technique from Anthropic that reads a model's internal activations at a specific layer and produces human-readable explanations of what the model is representing internally. The paper also demonstrates NLAs catching unverbalized evaluation awareness — cases where a model internally suspects it is being tested without saying so — which is directly relevant to the trust problem Polygraph addresses. A production version of Polygraph would move from output sampling to activation-based detection, catching fabrication at the source rather than inferring it statistically.
+
+## Stack
+
+- Python 3.9
+- Streamlit (UI)
+- Google Gemini 2.5 Flash (LLM)
+- Lizard (complexity metrics)
+- Radon (maintainability index)
+
+## Run It
+
+```bash
+git clone https://github.com/anshuma1i/codescope.git
+cd codescope
+pip install -r requirements.txt
+echo "GEMINI_API_KEY=your_key_here" > .env
+streamlit run app.py
 ```
-
-## Key Design Decisions
-
-*   **Grounded Explanations:** The LLM is explicitly forced to reference specific file paths, function names, and line numbers. It cannot make claims without verifiable evidence.
-*   **Anti-Hallucination Measures:** The system prompt rigidly forbids the LLM from inventing or hallucinating code, file names, or metrics not present in the ingested static analysis data.
-*   **Prompt Engineering Comparison:** An integrated comparison tool runs two prompting strategies side-by-side. This demonstrates directly how grounding instructions and proper context injection vastly improve report quality over "basic" generic AI prompts.
-*   **Multi-language Support:** Lizard enables structural analysis across both Python and Java natively.
-
-## Tech Stack
-
-*   **Python 3**
-*   **Lizard** (Multi-language metrics)
-*   **Radon** (Maintainability indices and complexity grading)
-*   **Google Gemini API** (LLM reporting engine)
-*   **Streamlit** (Frontend UI)
-*   **Pandas** (Data manipulation and structuring)
-
-## How to Run
-
-1. Clone this repository or download the source code:
-   ```bash
-   git clone <repository_url>
-   cd CodeScope
-   ```
-2. Create and activate a Python virtual environment:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Configure your environment:
-   *   Open the `.env` file and replace `GEMINI_API_KEY=your-key-here` with your actual Google Gemini API key.
-5. Run the Streamlit app:
-   ```bash
-   streamlit run app.py
-   ```
-
-## Example Output
-
-When run on a popular real-world codebase like the `requests` library, CodeScope accurately filters hundreds of functions to highlight structural bottlenecks. For example, it identified:
-*   `resolve_redirects` (Complexity: 15, LOC: 81)
-*   `send` (Complexity: 19, LOC: 81)
-*   `_encode_files` (Complexity: 21, Grade: D)
-
-The pipeline automatically flags these as critical risks and subsequently generates actionable refactoring recommendations mapped directly to business impact (e.g., maintenance cost, bug risk during critical network operations).
-
-## Future Work
-
-*   **Git Churn Integration:** Implement hotspot analysis combining code complexity with change frequency/commit history (mirroring approaches by CodeScene and SIG).
-*   **Retrieval-Augmented Generation (RAG):** RAG over SIG's rule descriptions and ISO 25010 documentation to provide even richer, context-aware explanations.
-*   **MCP Server Integration:** Build connecting layers to IDE-based coding assistants, mirroring Sigrid's MCP architecture to surface findings directly to developers as they type.
-*   **Expanded Language Support:** Leverage Lizard's underlying capacity to support 30+ programming languages.
-*   **Automated CI/CD Integration:** Output results into SARIF format for native integration into GitHub Advanced Security or GitLab.
-*   **Agent-Based Follow-Up:** Implement conversational drill-downs so users can ask the LLM further questions about specific identified risks iteratively.
 
 ## References
 
-*   Heitlager, Kuipers & Visser (2007), *"A Practical Model for Measuring Maintainability"*
-*   SIG/TÜViT Evaluation Criteria for Trusted Product Maintainability
-*   ISO/IEC 25010 Software Quality Model
-*   SIG Sigrid Documentation: [docs.sigrid-says.com](https://docs.sigrid-says.com)
-*   Jaoua et al. (2025), *"Combining LLMs with Static Analyzers for Code Review Generation"*
+Fraser-Taliente, K., Kantamneni, S., Ong, E., Mossing, D., et al. (2026). *Natural Language Autoencoders Produce Unsupervised Explanations of LLM Activations.* Anthropic. https://transformer-circuits.pub/2026/nla/
+
+Neuronpedia NLA Explorer (2026). Interactive demo of NLA explanations on Llama 3.3 70B. https://www.neuronpedia.org/llama3.3-70b-it/nla

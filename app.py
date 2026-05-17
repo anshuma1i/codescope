@@ -12,8 +12,9 @@ import altair as alt
 from analyzer import analyze_directory, enrich_with_radon
 from scorer import score_and_rank, get_top_risks, get_summary_stats
 from snippet_extractor import build_llm_context, build_summary_context
-from report_generator import generate_report, setup_client
+from report_generator import generate_report, setup_client, explain_finding
 from repo_handler import is_github_url, clone_repo, cleanup_repo
+from polygraph import score_explanation
 
 st.set_page_config(
     page_title="CodeScope",
@@ -709,7 +710,7 @@ if st.session_state.get('analysis_done', False):
         low = summary_stats.get("low_count", 0)
         total = summary_stats.get("total_functions", 1) or 1
 
-        tab1, tab2, tab3 = st.tabs(["Metrics Dashboard", "AI Report", "Prompt Comparison"])
+        tab1, tab2, tab3, tab4 = st.tabs(["Metrics Dashboard", "AI Report", "Prompt Comparison", "Per-Function Explanations"])
 
         # ==================== TAB 1: METRICS DASHBOARD ====================
         with tab1:
@@ -840,3 +841,82 @@ if st.session_state.get('analysis_done', False):
                 with col_right:
                     st.subheader("Basic Prompt")
                     st.markdown(st.session_state.get('basic_report', ''))
+
+        # ==================== TAB 4: PER-FUNCTION EXPLANATIONS ====================
+        with tab4:
+            st.markdown('<div class="cs-section-title">Per-Function AI Explanations</div>', unsafe_allow_html=True)
+            demo_mode = st.toggle("Show stress test (deliberately bad finding)", value=False)
+            if demo_mode:
+                top_risks = [{
+                    "file": "unknown_module.py",
+                    "function": "process_data",
+                    "complexity": 2,
+                    "nloc": 8,
+                    "risk_score": 12.0,
+                    "risk_level": "low",
+                    "maintainability_index": None,
+                    "parameters": 1,
+                    "start_line": 1,
+                    "end_line": 9,
+                    "language": "python"
+                }]
+            for idx, func in enumerate(top_risks):
+                cache_key = f"explanation_stress_test" if demo_mode else f"explanation_{func['file']}_{func['function']}"
+                poly_key = f"polygraph_stress_test" if demo_mode else f"polygraph_{func['file']}_{func['function']}"
+                with st.expander(f"{func['function']} — {func['file']}  [{func['risk_level'].upper()}]"):
+                    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                    col_m1.metric("Complexity", func.get("complexity", "N/A"))
+                    col_m2.metric("Lines of Code", func.get("nloc", "N/A"))
+                    col_m3.metric("Risk Score", func.get("risk_score", "N/A"))
+                    col_m4.metric("Parameters", func.get("parameters", "N/A"))
+
+                    if cache_key not in st.session_state:
+                        if st.button("Explain this function", key=f"explain_btn_{idx}"):
+                            with st.spinner("Generating explanation..."):
+                                st.session_state[cache_key] = explain_finding(func)
+                            st.rerun()
+                    else:
+                        st.markdown("---")
+                        st.markdown(st.session_state[cache_key])
+
+                        # Polygraph trust scoring
+                        if poly_key not in st.session_state:
+                            with st.spinner("Scoring explanation trustworthiness..."):
+                                st.session_state[poly_key] = score_explanation(func, st.session_state[cache_key])
+                            st.rerun()
+
+                        poly = st.session_state[poly_key]
+                        # Determine colors for trust score
+                        if poly["trust_score"] >= 70:
+                            score_color = "#00CC66"
+                            badge_color = "rgba(0, 204, 102, 0.15)"
+                            badge_border = "#00CC66"
+                        elif poly["trust_score"] >= 45:
+                            score_color = "#FF8C00"
+                            badge_color = "rgba(255, 140, 0, 0.15)"
+                            badge_border = "#FF8C00"
+                        else:
+                            score_color = "#FF0000"
+                            badge_color = "rgba(255, 0, 0, 0.15)"
+                            badge_border = "#FF0000"
+
+                        st.markdown(f"""
+                        <div style="background:rgba(10,15,28,0.86); border:1px solid rgba(148,163,184,0.16); border-radius:8px; padding:1rem; margin-top:1rem;">
+                            <div style="display:flex; align-items:center; gap:1.5rem; margin-bottom:0.8rem;">
+                                <div style="font-size:2.6rem; font-weight:900; color:{score_color}; font-variant-numeric:tabular-nums;">{poly['trust_score']:.0f}</div>
+                                <div style="font-size:0.72rem; text-transform:uppercase; color:#94A3B8; font-weight:700;">Trust Score</div>
+                                <div style="margin-left:auto; background:{badge_color}; border:1px solid {badge_border}; border-radius:999px; padding:0.3rem 0.7rem; font-size:0.75rem; font-weight:900; color:{score_color};">{poly['verdict']}</div>
+                            </div>
+                            <div style="display:grid; gap:0.5rem;">
+                                <div><div style="display:flex; justify-content:space-between; font-size:0.72rem; color:#94A3B8; font-weight:700; margin-bottom:0.2rem;"><span>Consistency</span><span>{poly['consistency_score']:.0f}/100</span></div>
+                                <div style="background:#1E293B; border-radius:4px; height:6px; overflow:hidden;"><div style="width:{poly['consistency_score']:.0f}%; background:#38BDF8; height:100%; border-radius:4px;"></div></div></div>
+                                <div><div style="display:flex; justify-content:space-between; font-size:0.72rem; color:#94A3B8; font-weight:700; margin-bottom:0.2rem;"><span>Grounding</span><span>{poly['grounding_score']:.0f}/100</span></div>
+                                <div style="background:#1E293B; border-radius:4px; height:6px; overflow:hidden;"><div style="width:{poly['grounding_score']:.0f}%; background:#00CC66; height:100%; border-radius:4px;"></div></div></div>
+                                <div><div style="display:flex; justify-content:space-between; font-size:0.72rem; color:#94A3B8; font-weight:700; margin-bottom:0.2rem;"><span>Sentiment</span><span>{poly['sentiment_score']:.0f}/100</span></div>
+                                <div style="background:#1E293B; border-radius:4px; height:6px; overflow:hidden;"><div style="width:{poly['sentiment_score']:.0f}%; background:#A855F7; height:100%; border-radius:4px;"></div></div></div>
+                                <div><div style="display:flex; justify-content:space-between; font-size:0.72rem; color:#94A3B8; font-weight:700; margin-bottom:0.2rem;"><span>Confidence</span><span>{poly['confidence_score']:.0f}/100</span></div>
+                                <div style="background:#1E293B; border-radius:4px; height:6px; overflow:hidden;"><div style="width:{poly['confidence_score']:.0f}%; background:#FF8C00; height:100%; border-radius:4px;"></div></div></div>
+                            </div>
+                            <div style="color:#94A3B8; font-size:0.8rem; margin-top:0.7rem; line-height:1.35;">{poly['reason']}</div>
+                        </div>
+                        """, unsafe_allow_html=True)

@@ -98,6 +98,48 @@ def generate_report_comparison(summary_context: str, llm_context: str) -> Dict[s
         
     return results
 
+def explain_finding(finding: dict) -> str:
+    """Generates a 3-4 sentence plain-English explanation for a single risky function."""
+    try:
+        system_prompt = (
+            "You are a code quality explainer for non-technical managers. "
+            "Write 3-4 sentences in plain English. Focus on business impact: "
+            "maintenance cost, bug risk, onboarding difficulty. "
+            "Do NOT include dates."
+        )
+        file_name = finding.get("file", "unknown")
+        func_name = finding.get("function", "unknown")
+        complexity = finding.get("complexity", "N/A")
+        risk_level = finding.get("risk_level", "unknown")
+        nloc = finding.get("nloc", "N/A")
+        risk_score = finding.get("risk_score", "N/A")
+        mi = finding.get("maintainability_index")
+        mi_str = f"{mi:.1f}" if mi is not None else "N/A"
+
+        user_prompt = f"""Here is a risky function found by static analysis:
+
+File: {file_name}
+Function: {func_name}
+Cyclomatic Complexity: {complexity}
+Lines of Code: {nloc}
+Risk Score: {risk_score} ({risk_level.upper()})
+Maintainability Index: {mi_str}
+
+Explain in 3-4 sentences what makes this function risky and why a manager should care.
+
+Your explanation MUST mention:
+- The exact function name
+- The exact file name
+- The actual complexity number ({complexity}) and what it means
+- The actual risk score ({risk_score})
+Do not write a generic explanation that could apply to any function. Every sentence must be specific to this function."""
+
+        model = setup_client(system_instruction=system_prompt)
+        response = model.generate_content(user_prompt)
+        return response.text
+    except Exception as e:
+        return f"Error generating explanation: {str(e)}"
+
 if __name__ == "__main__":
     from analyzer import analyze_directory, enrich_with_radon
     from scorer import score_and_rank, get_top_risks, get_summary_stats
