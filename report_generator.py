@@ -46,6 +46,7 @@ STRICT RULES:
 - Focus on business impact: maintenance cost, bug risk, onboarding difficulty, deployment risk
 - Be specific and actionable, not generic
 - Do NOT include any dates in the report
+- Do NOT include a To/From header, salutation, or sign-off — start directly with the Executive Summary
 
 REPORT STRUCTURE:
 1. Executive Summary (3-4 sentences: overall health verdict, biggest concern, recommended action)

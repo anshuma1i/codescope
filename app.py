@@ -845,19 +845,19 @@ if st.session_state.get('analysis_done', False):
         # ==================== TAB 4: PER-FUNCTION EXPLANATIONS ====================
         with tab4:
             st.markdown('<div class="cs-section-title">Per-Function AI Explanations</div>', unsafe_allow_html=True)
-            demo_mode = st.toggle("Show stress test (deliberately bad finding)", value=False)
+            demo_mode = st.toggle("Demo: contradiction test", value=False)
             if demo_mode:
                 top_risks = [{
-                    "file": "unknown_module.py",
-                    "function": "process_data",
-                    "complexity": 2,
-                    "nloc": 8,
-                    "risk_score": 12.0,
-                    "risk_level": "low",
-                    "maintainability_index": None,
-                    "parameters": 1,
+                    "file": "payment_service.py",
+                    "function": "process_refund",
+                    "complexity": 34,
+                    "nloc": 89,
+                    "risk_score": 91.0,
+                    "risk_level": "critical",
+                    "maintainability_index": 12.0,
+                    "parameters": 7,
                     "start_line": 1,
-                    "end_line": 9,
+                    "end_line": 89,
                     "language": "python"
                 }]
             for idx, func in enumerate(top_risks):
@@ -870,6 +870,17 @@ if st.session_state.get('analysis_done', False):
                     col_m3.metric("Risk Score", func.get("risk_score", "N/A"))
                     col_m4.metric("Parameters", func.get("parameters", "N/A"))
 
+                    # Demo mode: pre-populate with fixed contradiction pair (no LLM call)
+                    if demo_mode:
+                        demo_explanation = (
+                            "The process_refund function in payment_service.py is straightforward "
+                            "and simple to understand. This is a clean, manageable function that is "
+                            "unlikely to cause any issues. It is easy to maintain and new developers "
+                            "should be able to work with it quickly without difficulty."
+                        )
+                        st.session_state[cache_key] = demo_explanation
+                        st.session_state[poly_key] = score_explanation(func, demo_explanation)
+
                     if cache_key not in st.session_state:
                         if st.button("Explain this function", key=f"explain_btn_{idx}"):
                             with st.spinner("Generating explanation..."):
@@ -878,6 +889,15 @@ if st.session_state.get('analysis_done', False):
                     else:
                         st.markdown("---")
                         st.markdown(st.session_state[cache_key])
+
+                        if demo_mode:
+                            st.markdown(
+                                '<div style="color:#64748B; font-size:0.75rem; margin-top:0.3rem;">'
+                                'This is a fixed example explanation that deliberately downplays a '
+                                'critical-risk function, to demonstrate contradiction detection.'
+                                '</div>',
+                                unsafe_allow_html=True
+                            )
 
                         # Polygraph trust scoring
                         if poly_key not in st.session_state:
@@ -917,6 +937,6 @@ if st.session_state.get('analysis_done', False):
                                 <div><div style="display:flex; justify-content:space-between; font-size:0.72rem; color:#94A3B8; font-weight:700; margin-bottom:0.2rem;"><span>Confidence</span><span>{poly['confidence_score']:.0f}/100</span></div>
                                 <div style="background:#1E293B; border-radius:4px; height:6px; overflow:hidden;"><div style="width:{poly['confidence_score']:.0f}%; background:#FF8C00; height:100%; border-radius:4px;"></div></div></div>
                             </div>
-                            <div style="color:#94A3B8; font-size:0.8rem; margin-top:0.7rem; line-height:1.35;">{poly['reason']}</div>
+                            {f'<div style="color:#94A3B8; font-size:0.8rem; margin-top:0.7rem; line-height:1.35;">{poly["reason"]}</div>' if poly["verdict"] in ("FLAG", "REVIEW") else ''}
                         </div>
                         """, unsafe_allow_html=True)
